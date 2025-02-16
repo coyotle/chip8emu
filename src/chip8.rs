@@ -32,6 +32,25 @@ impl Default for Chip8 {
     }
 }
 
+const FONTS: [u8; 80] = [
+    0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+    0x20, 0x60, 0x20, 0x20, 0x70, // 1
+    0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+    0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+    0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+    0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+    0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+    0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+    0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+    0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+    0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+    0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+    0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+    0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+    0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+    0xF0, 0x80, 0xF0, 0x80, 0x80, // F
+];
+
 impl Chip8 {
     pub fn update_timers(&mut self) {
         if self.delay_timer > 0 {
@@ -44,15 +63,8 @@ impl Chip8 {
 
     pub fn reset(&mut self) {
         self.memory.fill(0);
-        self.registers.fill(0);
-        self.i_register = 0;
-        self.pc = 0x200;
-        self.stack.clear();
-        self.display.fill([0; 64]);
-        self.keys.fill(false);
-        self.delay_timer = 0;
-        self.sound_timer = 0;
-        self.waiting_key_opcode = 0;
+        self.load_fonts();
+        self.restart();
     }
 
     pub fn restart(&mut self) {
@@ -81,6 +93,12 @@ impl Chip8 {
     pub fn load_from_file(&mut self, filename: &PathBuf) {
         let buffer = std::fs::read(&filename).unwrap();
         self.load_rom(&buffer, 0x200);
+    }
+
+    fn load_fonts(&mut self) {
+        for (i, &byte) in FONTS.iter().enumerate() {
+            self.memory[i] = byte;
+        }
     }
 
     pub fn get_current_opcode(&self) -> u16 {
