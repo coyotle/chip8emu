@@ -1,6 +1,6 @@
 # Chip-8 Emulator in Rust with Bevy
 
-![Chip-8 Emulator Screenshot](screenshot.png)
+![Chip-8 Emulator Screenshot](screenshot.wepb)
 
 ## Description
 
