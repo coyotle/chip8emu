@@ -1,8 +1,11 @@
+mod audio;
 mod chip8;
 
+use audio::SineWave;
 use bevy::prelude::*;
 use chip8::Chip8;
 use clap::Parser;
+use rodio::{OutputStream, Source, SpatialSink};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -26,7 +29,9 @@ fn main() {
         .insert_resource(chip8)
         .add_systems(Startup, setup)
         .add_systems(Startup, setup_display)
+        .add_systems(Startup, setup_sound)
         .add_systems(Update, (update_keys, draw_display))
+        .add_systems(Update, update_sound)
         .add_systems(FixedUpdate, (run_chip8, update_chip8_timers))
         .add_systems(FixedUpdate, draw_registers)
         .run();
@@ -47,36 +52,7 @@ fn setup(mut commands: Commands) {
     ));
 }
 
-const PIXEL_SIZE: f32 = 10.0;
-const DISPLAY_WIDTH: usize = 64;
-const DISPLAY_HEIGHT: usize = 32;
-
-#[derive(Component)]
-struct Chip8Pixel {
-    x: usize,
-    y: usize,
-}
-
-fn setup_display(mut commands: Commands) {
-    for y in 0..DISPLAY_HEIGHT {
-        for x in 0..DISPLAY_WIDTH {
-            commands.spawn((
-                Sprite::from_color(
-                    Color::srgb(0.0, 1.0, 0.0),
-                    Vec2::new(PIXEL_SIZE, PIXEL_SIZE),
-                ),
-                Transform::from_xyz(
-                    x as f32 * PIXEL_SIZE - DISPLAY_WIDTH as f32 * PIXEL_SIZE / 2.0,
-                    DISPLAY_HEIGHT as f32 * PIXEL_SIZE / 2.0 - y as f32 * PIXEL_SIZE,
-                    0.0,
-                ),
-                Chip8Pixel { x, y },
-            ));
-        }
-    }
-}
-
-/// Обновляем состояние CHIP-8 с частотой 500Hz
+/// Update CHIP-8 emu with 500Hz
 fn run_chip8(mut chip8: ResMut<Chip8>, time: Res<Time>, mut accumulator: Local<f32>) {
     *accumulator += time.delta_secs();
     let cycle_time = 1.0 / 500.0;
@@ -86,7 +62,7 @@ fn run_chip8(mut chip8: ResMut<Chip8>, time: Res<Time>, mut accumulator: Local<f
     }
 }
 
-/// Обновляем таймеры CHIP-8 с частотой 60Hz
+/// Timers update systems 60Hz
 fn update_chip8_timers(mut chip8: ResMut<Chip8>, time: Res<Time>, mut accumulator: Local<f32>) {
     *accumulator += time.delta_secs();
     let timer_interval = 1.0 / 60.0;
@@ -96,6 +72,7 @@ fn update_chip8_timers(mut chip8: ResMut<Chip8>, time: Res<Time>, mut accumulato
     }
 }
 
+// Update keys state
 fn update_keys(keyboard_input: Res<ButtonInput<KeyCode>>, mut chip8: ResMut<Chip8>) {
     if keyboard_input.pressed(KeyCode::Escape) {
         chip8.restart();
@@ -125,14 +102,45 @@ fn update_keys(keyboard_input: Res<ButtonInput<KeyCode>>, mut chip8: ResMut<Chip
     }
 }
 
-// Система отрисовка дисплея
+// Dysplay systems
+//
+const DISPLAY_WIDTH: usize = 64;
+const DISPLAY_HEIGHT: usize = 32;
+
+const PIXEL_SIZE: f32 = 10.0;
+
+const COLOR_ON: Color = Color::srgb(0.0, 1.0, 0.0);
+const COLOR_OFF: Color = Color::srgb(0.0, 0.0, 0.0);
+
+#[derive(Component)]
+struct Chip8Pixel {
+    x: usize,
+    y: usize,
+}
+
+fn setup_display(mut commands: Commands) {
+    for y in 0..DISPLAY_HEIGHT {
+        for x in 0..DISPLAY_WIDTH {
+            commands.spawn((
+                Sprite::from_color(COLOR_OFF, Vec2::new(PIXEL_SIZE, PIXEL_SIZE)),
+                Transform::from_xyz(
+                    x as f32 * PIXEL_SIZE - DISPLAY_WIDTH as f32 * PIXEL_SIZE / 2.0,
+                    DISPLAY_HEIGHT as f32 * PIXEL_SIZE / 2.0 - y as f32 * PIXEL_SIZE,
+                    0.0,
+                ),
+                Chip8Pixel { x, y },
+            ));
+        }
+    }
+}
+
 fn draw_display(chip8: Res<Chip8>, mut query: Query<(&Chip8Pixel, &mut Sprite)>) {
     for (px, mut sprite) in query.iter_mut() {
-        if chip8.display[px.y][px.x] > 0 {
-            sprite.color = Color::srgb(0.0, 1.0, 0.0);
+        sprite.color = if chip8.display[px.y][px.x] > 0 {
+            COLOR_ON
         } else {
-            sprite.color = Color::srgb(0.0, 0.0, 0.0);
-        }
+            COLOR_OFF
+        };
     }
 }
 
@@ -140,4 +148,31 @@ fn draw_registers(chip8: Res<Chip8>, mut text: Single<&mut Text, With<PcText>>) 
     let pc = chip8.pc;
     let op = chip8.get_current_opcode();
     text.0 = format!("PC: {:04X}\nOP: {:04X}", pc, op);
+}
+
+/// Audio systems
+
+fn setup_sound(world: &mut World) {
+    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+    let sink = rodio::SpatialSink::try_new(
+        &stream_handle,
+        [0.0, 0.0, 0.0],
+        [-0.1, 0.0, 0.0],
+        [0.1, 0.0, 0.0],
+    )
+    .unwrap();
+    let source = SineWave::new(220.0).amplify(0.2).convert_samples::<f32>();
+    sink.append(source);
+    sink.pause();
+
+    world.insert_non_send_resource(sink);
+    world.insert_non_send_resource(_stream);
+}
+
+fn update_sound(chip8: Res<Chip8>, sink: NonSend<SpatialSink>) {
+    if chip8.sound_timer > 0 {
+        sink.play();
+    } else {
+        sink.pause();
+    }
 }
