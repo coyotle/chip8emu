@@ -19,7 +19,7 @@ This project is a Chip-8 emulator developed using the Rust and the Bevy game eng
 ```bash
 git clone https://github.com/yourusername/chip8emu.git
 cd chip8emu
-cargo run path/to/your/romfile
+cargo run --release -- path/to/your/romfile
 ```
 
 Replace path/to/your/romfile with the path to the Chip-8 ROM you wish to run. You can find some ROMs [here](https://github.com/kripod/chip8-roms).
@@ -33,4 +33,5 @@ Q W E R
 A S D F
 Z X C V
 
-`Esc`: Restart the emulator.
+`P`: Pause emulator
+`Esc`: Restart emulator

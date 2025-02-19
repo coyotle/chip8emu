@@ -1,7 +1,6 @@
 use bevy::ecs::system::Resource;
 use std::{path::PathBuf, usize};
 
-#[derive(Resource)]
 pub struct Chip8 {
     pub memory: [u8; 4096],
     pub registers: [u8; 16],

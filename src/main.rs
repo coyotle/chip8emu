@@ -16,17 +16,27 @@ struct Args {
     rom: PathBuf,
 }
 
+//#[derive(Component)]
+#[derive(Resource)]
+struct Emulator {
+    chip8: Chip8,
+    paused: bool,
+}
+
 fn main() {
     let args = Args::parse();
     println!("Loading ROM: {:?}", args.rom);
 
     let mut chip8 = Chip8::default();
-
     chip8.load_from_file(&args.rom);
+    let emulator = Emulator {
+        chip8,
+        paused: false,
+    };
 
     App::new()
         .add_plugins(DefaultPlugins)
-        .insert_resource(chip8)
+        .insert_resource(emulator)
         .add_systems(Startup, setup)
         .add_systems(Startup, setup_display)
         .add_systems(Startup, setup_sound)
@@ -53,29 +63,44 @@ fn setup(mut commands: Commands) {
 }
 
 /// Update CHIP-8 emu with 500Hz
-fn run_chip8(mut chip8: ResMut<Chip8>, time: Res<Time>, mut accumulator: Local<f32>) {
+fn run_chip8(mut emu: ResMut<Emulator>, time: Res<Time>, mut accumulator: Local<f32>) {
+    if emu.paused {
+        return ();
+    }
+
     *accumulator += time.delta_secs();
     let cycle_time = 1.0 / 500.0;
     while *accumulator >= cycle_time {
-        chip8.execute_opcode();
+        emu.chip8.execute_opcode();
         *accumulator -= cycle_time;
     }
 }
 
 /// Timers update systems 60Hz
-fn update_chip8_timers(mut chip8: ResMut<Chip8>, time: Res<Time>, mut accumulator: Local<f32>) {
+fn update_chip8_timers(mut emu: ResMut<Emulator>, time: Res<Time>, mut accumulator: Local<f32>) {
+    if emu.paused {
+        return ();
+    }
+
     *accumulator += time.delta_secs();
     let timer_interval = 1.0 / 60.0;
     while *accumulator >= timer_interval {
-        chip8.update_timers();
+        emu.chip8.update_timers();
         *accumulator -= timer_interval;
     }
 }
 
 // Update keys state
-fn update_keys(keyboard_input: Res<ButtonInput<KeyCode>>, mut chip8: ResMut<Chip8>) {
+fn update_keys(keyboard_input: Res<ButtonInput<KeyCode>>, mut emu: ResMut<Emulator>) {
+    // restart emulator when Esc pressed
     if keyboard_input.pressed(KeyCode::Escape) {
-        chip8.restart();
+        emu.chip8.restart();
+        emu.paused = false;
+    }
+
+    // pause emulator when P pressed
+    if keyboard_input.just_pressed(KeyCode::KeyP) {
+        emu.paused = !emu.paused;
     }
 
     let key_map = [
@@ -98,7 +123,7 @@ fn update_keys(keyboard_input: Res<ButtonInput<KeyCode>>, mut chip8: ResMut<Chip
     ];
 
     for (i, &key_code) in key_map.iter().enumerate() {
-        chip8.keys[i] = keyboard_input.pressed(key_code);
+        emu.chip8.keys[i] = keyboard_input.pressed(key_code);
     }
 }
 
@@ -134,9 +159,9 @@ fn setup_display(mut commands: Commands) {
     }
 }
 
-fn draw_display(chip8: Res<Chip8>, mut query: Query<(&Chip8Pixel, &mut Sprite)>) {
+fn draw_display(emu: Res<Emulator>, mut query: Query<(&Chip8Pixel, &mut Sprite)>) {
     for (px, mut sprite) in query.iter_mut() {
-        sprite.color = if chip8.display[px.y][px.x] > 0 {
+        sprite.color = if emu.chip8.display[px.y][px.x] > 0 {
             COLOR_ON
         } else {
             COLOR_OFF
@@ -144,9 +169,9 @@ fn draw_display(chip8: Res<Chip8>, mut query: Query<(&Chip8Pixel, &mut Sprite)>)
     }
 }
 
-fn draw_registers(chip8: Res<Chip8>, mut text: Single<&mut Text, With<PcText>>) {
-    let pc = chip8.pc;
-    let op = chip8.get_current_opcode();
+fn draw_registers(emu: Res<Emulator>, mut text: Single<&mut Text, With<PcText>>) {
+    let pc = emu.chip8.pc;
+    let op = emu.chip8.get_current_opcode();
     text.0 = format!("PC: {:04X}\nOP: {:04X}", pc, op);
 }
 
@@ -169,8 +194,12 @@ fn setup_sound(world: &mut World) {
     world.insert_non_send_resource(_stream);
 }
 
-fn update_sound(chip8: Res<Chip8>, sink: NonSend<SpatialSink>) {
-    if chip8.sound_timer > 0 {
+fn update_sound(emu: Res<Emulator>, sink: NonSend<SpatialSink>) {
+    if emu.paused {
+        return ();
+    }
+
+    if emu.chip8.sound_timer > 0 {
         sink.play();
     } else {
         sink.pause();
